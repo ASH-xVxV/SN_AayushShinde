@@ -1,45 +1,35 @@
-# src/utils/encryption.py
+# encryption.py
 from cryptography.fernet import Fernet
 import os
 
-# secret.key will be placed at src/secret.key (next to server.py)
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../src
-KEY_FILE = os.path.join(BASE_DIR, "secret.key")
+# Key should be loaded from a very secure location (env variable) in production!
+# Generate a key: `key = Fernet.generate_key()`
+KEY = os.getenv('ENCRYPTION_KEY', 'your_super_secret_key_here') 
+cipher_suite = Fernet(KEY)
 
-def generate_key():
-    """Create a new Fernet key and save it to src/secret.key (one-time)."""
-    key = Fernet.generate_key()
-    with open(KEY_FILE, "wb") as f:
-        f.write(key)
-    return key
+def encrypt_file(input_path, output_path):
+    """Reads a file, encrypts its contents, and writes it."""
+    with open(input_path, 'rb') as file:
+        file_data = file.read()
+    encrypted_data = cipher_suite.encrypt(file_data)
+    with open(output_path, 'wb') as file:
+        file.write(encrypted_data)
 
-def load_key():
-    if not os.path.exists(KEY_FILE):
-        raise FileNotFoundError("secret.key not found. Run generate_key() locally or place the key at src/secret.key")
-    with open(KEY_FILE, "rb") as f:
-        return f.read()
+def decrypt_file(input_path):
+    """Reads an encrypted file and returns the decrypted data."""
+    with open(input_path, 'rb') as file:
+        encrypted_data = file.read()
+    try:
+        decrypted_data = cipher_suite.decrypt(encrypted_data)
+        return decrypted_data
+    except Exception as e:
+        raise Exception("Failed to decrypt file. It may be corrupted or the key is wrong.") from e
 
-def encrypt_bytes(data: bytes) -> bytes:
-    key = load_key()
-    return Fernet(key).encrypt(data)
-
-def decrypt_bytes(token: bytes) -> bytes:
-    key = load_key()
-    return Fernet(key).decrypt(token)
-
-def encrypt_file(path: str) -> str:
-    """Encrypt a file in-place: writes path + '.enc', returns new path."""
-    with open(path, "rb") as f:
-        data = f.read()
-    token = encrypt_bytes(data)
-    out = path + ".enc"
-    with open(out, "wb") as f:
-        f.write(token)
-    return out
-
-def decrypt_file(path: str) -> str:
-    """Read encrypted file and return decrypted text (utf-8)."""
-    with open(path, "rb") as f:
-        token = f.read()
-    data = decrypt_bytes(token)
-    return data.decode("utf-8")
+# Optional: Function to encrypt all files in a directory at startup
+def encrypt_storage(base_path):
+    for root, dirs, files in os.walk(base_path):
+        for file in files:
+            if not file.endswith('.encrypted'): # Avoid double-encrypting
+                file_path = os.path.join(root, file)
+                encrypt_file(file_path, file_path + '.encrypted')
+                os.remove(file_path) # Delete the original plain text file
